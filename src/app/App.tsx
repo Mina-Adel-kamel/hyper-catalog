@@ -257,7 +257,7 @@ function App() {
 
   const currentTheme = THEMES[magazineConfig.theme];
 
-  // ========== دالة التصدير المُصلحة ==========
+  // ========== دالة التصدير المُصلحة — pixel-perfect ==========
   const exportToPDF = async () => {
     if (!magazineRef.current) return;
 
@@ -270,61 +270,55 @@ function App() {
     try {
       toast.info('جاري تحميل الخطوط والصور...');
 
-      // ========== الخطوة 1: تحميل خط Cairo بشكل صريح ==========
-      // إضافة خط Cairo عبر FontFace API
-      const fontUrl = 'https://fonts.gstatic.com/s/cairo/v28/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hAA-W1ToLQ-HmkA.woff2';
+      // ===== تحميل خط Cairo =====
       try {
-        const cairoFont = new FontFace('Cairo', `url(${fontUrl})`, {
-          weight: '400 900',
-          style: 'normal',
-        });
-        const loadedFont = await cairoFont.load();
-        document.fonts.add(loadedFont);
-      } catch (fontErr) {
-        console.warn('Could not load Cairo font via FontFace API, using fallback', fontErr);
+        const cairoFont = new FontFace(
+          'Cairo',
+          "url(https://fonts.gstatic.com/s/cairo/v28/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hAA-W1ToLQ-HmkA.woff2)",
+          { weight: '400 900', style: 'normal' }
+        );
+        const loaded = await cairoFont.load();
+        document.fonts.add(loaded);
+      } catch (e) {
+        console.warn('FontFace load failed, continuing...', e);
       }
-
       await document.fonts.ready;
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(r => setTimeout(r, 800));
 
-      // ========== الخطوة 2: تحميل جميع الصور مسبقاً وتحويلها لـ base64 ==========
+      // ===== تحميل الصور كـ base64 =====
       toast.info('جاري تحميل الصور...');
-      const allImages = magazineRef.current.querySelectorAll('img');
+      const allImgs = magazineRef.current.querySelectorAll('img');
       const imageCache = new Map<string, string>();
+      await Promise.all(Array.from(allImgs).map(async (img) => {
+        if (img.src && !imageCache.has(img.src)) {
+          const b64 = await loadImageAsBase64(img.src);
+          imageCache.set(img.src, b64);
+        }
+      }));
 
-      await Promise.all(
-        Array.from(allImages).map(async (img) => {
-          if (img.src && !imageCache.has(img.src)) {
-            const base64 = await loadImageAsBase64(img.src);
-            imageCache.set(img.src, base64);
-          }
-        })
-      );
-
-      toast.success('تم تحميل الصور');
-
-      // ========== الخطوة 3: إنشاء PDF ==========
+      // ===== إنشاء PDF بأبعاد A4 landscape =====
+      // A4 landscape: 297mm × 210mm
       const pdf = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pdfW = pdf.internal.pageSize.getWidth();  // 297mm
+      const pdfH = pdf.internal.pageSize.getHeight(); // 210mm
+
+      // أبعاد الـ section في البراوزر بالـ px (1122 × 794)
+      const PAGE_W_PX = 1122;
+      const PAGE_H_PX = 794;
 
       const sections = magazineRef.current.querySelectorAll('[data-pdf-section]');
       toast.info(`جاري معالجة ${sections.length} صفحة...`);
 
       for (let i = 0; i < sections.length; i++) {
         const section = sections[i] as HTMLElement;
+        if (pdfButton) pdfButton.textContent = `جاري التصدير... ${i + 1} / ${sections.length}`;
 
-        if (pdfButton) {
-          pdfButton.textContent = `جاري التصدير... ${i + 1} / ${sections.length}`;
-        }
-
-        // انتظار تحميل الخطوط قبل كل صفحة
         await document.fonts.ready;
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(r => setTimeout(r, 300));
 
-        // ========== الخطوة 4: تحويل القسم لصورة ==========
+        // ===== html2canvas بأبعاد ثابتة = أبعاد الـ section نفسه =====
         const canvas = await html2canvas(section, {
-          scale: 2,
+          scale: 1,                    // scale=1 → الـ canvas بنفس أبعاد العنصر
           useCORS: true,
           allowTaint: false,
           logging: false,
@@ -332,90 +326,44 @@ function App() {
           foreignObjectRendering: false,
           imageTimeout: 30000,
           removeContainer: true,
-          // ========== onclone: إصلاح النصوص العربية والصور ==========
-          onclone: async (clonedDoc, clonedElement) => {
-            // ========== 1. تضمين خط Cairo مباشرة في الـ clone ==========
-            const styleEl = clonedDoc.createElement('style');
-            styleEl.textContent = `
+          width: PAGE_W_PX,
+          height: PAGE_H_PX,
+          windowWidth: PAGE_W_PX,
+          windowHeight: PAGE_H_PX,
+          onclone: async (clonedDoc, clonedEl) => {
+            // تضمين Cairo مباشرة
+            const style = clonedDoc.createElement('style');
+            style.textContent = `
               @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
-              * {
-                font-family: 'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif !important;
-                direction: rtl !important;
-                -webkit-font-smoothing: antialiased !important;
-                text-rendering: optimizeLegibility !important;
-              }
+              * { font-family: 'Cairo', 'Tahoma', sans-serif !important; direction: rtl !important; }
             `;
-            clonedDoc.head.appendChild(styleEl);
-
-            // انتظار تحميل الخطوط في الـ clone
+            clonedDoc.head.appendChild(style);
             await clonedDoc.fonts.ready;
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise(r => setTimeout(r, 600));
 
-            // ========== 2. استبدال جميع الصور بـ base64 ==========
-            const clonedImages = clonedElement.querySelectorAll('img');
-            clonedImages.forEach((img: HTMLImageElement) => {
-              const originalSrc = img.src;
-              // البحث في الـ cache
-              const cachedSrc = imageCache.get(originalSrc);
-              if (cachedSrc && cachedSrc !== originalSrc) {
-                img.src = cachedSrc;
-              }
+            // استبدال الصور بـ base64
+            clonedEl.querySelectorAll('img').forEach((img: HTMLImageElement) => {
+              const cached = imageCache.get(img.src);
+              if (cached) img.src = cached;
               img.removeAttribute('loading');
               img.removeAttribute('srcset');
               img.style.display = 'block';
-              img.style.objectFit = 'cover';
-            });
-
-            // ========== 3. تطبيق الإعدادات على جميع العناصر النصية ==========
-            const allTextElements = clonedElement.querySelectorAll('*');
-            allTextElements.forEach((el: Element) => {
-              const htmlEl = el as HTMLElement;
-              const tag = htmlEl.tagName.toLowerCase();
-
-              // تطبيق الخط على العناصر النصية فقط
-              if (!['img', 'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon'].includes(tag)) {
-                htmlEl.style.fontFamily = "'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif";
-                htmlEl.style.direction = 'rtl';
-                htmlEl.style.unicodeBidi = 'embed';
-              }
-            });
-
-            // ========== 4. إصلاح العناوين الكبيرة بشكل خاص ==========
-            const headings = clonedElement.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="font-black"], [class*="font-bold"]');
-            headings.forEach((heading: Element) => {
-              const h = heading as HTMLElement;
-              h.style.fontFamily = "'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif";
-              h.style.fontWeight = '900';
-              h.style.letterSpacing = 'normal';
-              h.style.wordSpacing = 'normal';
             });
           },
         });
 
-        // ========== الخطوة 5: إضافة الصفحة للـ PDF ==========
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        const imgWidth = pageWidth;
-        const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
+        // ===== إضافة الصفحة للـ PDF =====
+        // الـ canvas بالضبط 1122×794 → نضعه في A4 landscape 297×210mm
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
         if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
 
-        if (imgHeight > pageHeight) {
-          const scaledWidth = (pageHeight * canvas.width) / canvas.height;
-          const xOffset = Math.max(0, (pageWidth - scaledWidth) / 2);
-          pdf.addImage(imgData, 'JPEG', xOffset, 0, Math.min(scaledWidth, pageWidth), pageHeight);
-        } else {
-          const yOffset = (pageHeight - imgHeight) / 2;
-          pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(r => setTimeout(r, 150));
       }
 
-      // ========== الخطوة 6: حفظ الملف ==========
-      const fileName = `${magazineConfig.title}-${magazineConfig.month || 'مجلة'}.pdf`;
-      pdf.save(fileName);
-
-      toast.success('✅ تم تحميل ملف PDF بنجاح!');
+      // ===== حفظ الملف =====
+      pdf.save(`${magazineConfig.title}-${magazineConfig.month || 'مجلة'}.pdf`);
+      toast.success('✅ تم تحميل PDF بنجاح!');
 
       if (pdfButton) {
         pdfButton.textContent = '✓ تم التحميل!';
@@ -424,8 +372,8 @@ function App() {
         }, 3000);
       }
 
-    } catch (error) {
-      console.error('PDF Error:', error);
+    } catch (err) {
+      console.error('PDF Error:', err);
       toast.error('❌ حدث خطأ أثناء إنشاء PDF');
       if (pdfButton) {
         pdfButton.innerHTML = '<svg class="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>تحميل PDF';
@@ -598,16 +546,31 @@ function App() {
           </div>
         </div>
       ) : (
-        <div style={{ backgroundColor: '#ffffff' }}>
-          <div className="print:hidden sticky top-0 z-50 p-4 shadow-lg" style={{ backgroundColor: currentTheme.primary, color: '#ffffff' }}>
-            <div className="container mx-auto flex items-center justify-between">
-              <h2 className="text-2xl font-bold">معاينة المجلة</h2>
-              <div className="flex gap-2">
+        // ===== معاينة المجلة =====
+        // كل صفحة بأبعاد A4 landscape بالضبط: 1122 × 794 px (96dpi)
+        // هذه الأبعاد هي نفسها التي يستخدمها html2canvas → PDF بدون أي فرق
+        <div style={{ backgroundColor: '#e5e7eb', minHeight: '100vh' }}>
+
+          {/* شريط التحكم */}
+          <div
+            className="print:hidden sticky top-0 z-50 p-3 shadow-lg"
+            style={{ backgroundColor: currentTheme.primary, color: '#ffffff' }}
+          >
+            <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'Cairo, sans-serif' }}>
+                معاينة المجلة — كل صفحة بحجم A4 أفقي
+              </h2>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <Button onClick={() => setViewMode('admin')} variant="secondary">
                   <SettingsIcon className="size-4 ml-2" />
                   العودة للوحة التحكم
                 </Button>
-                <Button onClick={exportToPDF} variant="default" style={{ backgroundColor: '#16a34a' }} data-pdf-button>
+                <Button
+                  onClick={exportToPDF}
+                  variant="default"
+                  style={{ backgroundColor: '#16a34a' }}
+                  data-pdf-button
+                >
                   <FileDown className="size-4 ml-2" />
                   تحميل PDF
                 </Button>
@@ -615,19 +578,78 @@ function App() {
             </div>
           </div>
 
-          <div ref={magazineRef}>
-            <div data-pdf-section>
-              <MagazineCover
-                backgroundImage={magazineConfig.coverImage}
-                title={magazineConfig.title}
-                storeName={magazineConfig.storeName}
-                phone={magazineConfig.phone}
-                month={magazineConfig.month}
-                logo={magazineConfig.logo}
-                theme={currentTheme.primary}
-              />
+          {/* الصفحات */}
+          <div
+            ref={magazineRef}
+            style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}
+          >
+
+            {/* ===== غلاف المجلة ===== */}
+            <div
+              data-pdf-section
+              style={{
+                width: '1122px',
+                height: '794px',
+                position: 'relative',
+                overflow: 'hidden',
+                flexShrink: 0,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+                fontFamily: 'Cairo, sans-serif',
+                background: `linear-gradient(135deg, ${currentTheme.primary} 0%, #9333ea 50%, #ec4899 100%)`,
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                paddingTop: '120px',
+              }}
+              dir="rtl"
+            >
+              {/* صورة الخلفية */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                backgroundImage: `url(${magazineConfig.coverImage})`,
+                backgroundSize: 'cover', backgroundPosition: 'center',
+                opacity: 0.3,
+              }} />
+
+              {/* لوجو */}
+              {magazineConfig.logo && (
+                <div style={{ position: 'absolute', top: '32px', right: '32px', zIndex: 10 }}>
+                  <img src={magazineConfig.logo} alt="Logo" crossOrigin="anonymous"
+                    style={{ maxHeight: '80px', maxWidth: '240px', objectFit: 'contain' }} />
+                </div>
+              )}
+
+              {/* المحتوى المركزي */}
+              <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', color: '#fff', padding: '0 40px' }}>
+                <h1 style={{ fontSize: '96px', fontWeight: '900', marginBottom: '16px', fontFamily: 'Cairo, sans-serif', lineHeight: 1.1 }}>
+                  {magazineConfig.title}
+                </h1>
+                <h2 style={{ fontSize: '40px', fontWeight: '600', fontFamily: 'Cairo, sans-serif' }}>
+                  {magazineConfig.storeName}
+                </h2>
+                <p style={{ fontSize: '24px', marginTop: '24px', opacity: 0.9, fontFamily: 'Cairo, sans-serif' }}>
+                  عروض مميزة • أسعار لا تقاوم
+                </p>
+              </div>
+
+              {/* العنوان أسفل يسار */}
+              <div style={{ position: 'absolute', bottom: '32px', left: '32px', zIndex: 10, display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+                <span style={{ fontSize: '22px', fontWeight: '600', fontFamily: 'Cairo, sans-serif' }}>شارع ابو كلام بساحل طهطا</span>
+              </div>
+
+              {/* الهاتف أسفل يمين */}
+              <div style={{ position: 'absolute', bottom: '32px', right: '32px', zIndex: 10, display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+                <span style={{ fontSize: '22px', fontWeight: '600', fontFamily: 'Cairo, sans-serif' }} dir="ltr">{magazineConfig.phone}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                </svg>
+              </div>
             </div>
 
+            {/* ===== صفحات المنتجات ===== */}
             {allCategories.map(category => {
               const categoryProducts = productsByCategory[category];
               if (!categoryProducts || categoryProducts.length === 0) return null;
@@ -642,86 +664,75 @@ function App() {
                   key={`${category}-page-${pageIndex}`}
                   data-pdf-section
                   style={{
+                    width: '1122px',
+                    height: '794px',
                     position: 'relative',
-                    width: '297mm',
-                    minHeight: '210mm',
-                    backgroundColor: '#ffffff',
                     overflow: 'hidden',
+                    flexShrink: 0,
+                    backgroundColor: '#ffffff',
                     boxSizing: 'border-box',
-                    margin: '0 auto',
-                    padding: '40px 50px',
-                    pageBreakAfter: 'always',
+                    padding: '40px 50px 50px',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                    fontFamily: 'Cairo, sans-serif',
+                    display: 'flex',
+                    flexDirection: 'column',
                   }}
+                  dir="rtl"
                 >
-                  {/* خلفية تملأ الصفحة بالكامل */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      backgroundImage: 'url(https://images.unsplash.com/photo-1560428943-715536fc4689?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920)',
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      backgroundRepeat: 'no-repeat',
-                      opacity: 0.07,
-                      width: '100%',
-                      height: '100%',
-                    }}
-                  />
+                  {/* خلفية خفيفة */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    backgroundImage: 'url(https://images.unsplash.com/photo-1560428943-715536fc4689?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920)',
+                    backgroundSize: 'cover', backgroundPosition: 'center',
+                    opacity: 0.05,
+                  }} />
 
-                  {/* شريط لوني علوي */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: '8px',
-                      background: `linear-gradient(90deg, ${currentTheme.primary}, ${currentTheme.secondary})`,
-                    }}
-                  />
+                  {/* شريط علوي */}
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+                    background: `linear-gradient(90deg, ${currentTheme.primary}, ${currentTheme.secondary})`,
+                  }} />
 
-                  {/* شريط لوني سفلي */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: '8px',
-                      background: `linear-gradient(90deg, ${currentTheme.secondary}, ${currentTheme.primary})`,
-                    }}
-                  />
+                  {/* شريط سفلي */}
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0, height: '8px',
+                    background: `linear-gradient(90deg, ${currentTheme.secondary}, ${currentTheme.primary})`,
+                  }} />
 
+                  {/* لوجو */}
                   {magazineConfig.logo && (
                     <div style={{ position: 'absolute', top: '16px', right: '32px', zIndex: 10 }}>
-                      <img src={magazineConfig.logo} alt="Logo" style={{ maxHeight: '56px', maxWidth: '160px', objectFit: 'contain' }} crossOrigin="anonymous" />
+                      <img src={magazineConfig.logo} alt="Logo" crossOrigin="anonymous"
+                        style={{ maxHeight: '50px', maxWidth: '140px', objectFit: 'contain' }} />
                     </div>
                   )}
 
-                  {/* اسم المتجر أسفل يسار */}
-                  <div style={{ position: 'absolute', bottom: '20px', left: '32px', zIndex: 10 }}>
-                    <span style={{ fontSize: '11px', color: currentTheme.primary, fontFamily: 'Cairo, sans-serif', fontWeight: '600', opacity: 0.7 }}>
+                  {/* اسم المتجر + الشهر أسفل يسار */}
+                  <div style={{ position: 'absolute', bottom: '18px', left: '32px', zIndex: 10 }}>
+                    <span style={{ fontSize: '12px', color: currentTheme.primary, fontFamily: 'Cairo, sans-serif', fontWeight: '600', opacity: 0.7 }}>
                       {magazineConfig.storeName} • {magazineConfig.month}
                     </span>
                   </div>
 
                   {/* المحتوى */}
-                  <div style={{ position: 'relative', zIndex: 10 }}>
-                    <h2
-                      style={{
-                        fontSize: '42px',
-                        fontWeight: '900',
-                        marginBottom: '24px',
-                        textAlign: 'center',
-                        paddingBottom: '12px',
-                        color: currentTheme.primary,
-                        borderBottom: `4px solid ${currentTheme.secondary}`,
-                        fontFamily: 'Cairo, sans-serif',
-                      }}
-                    >
+                  <div style={{ position: 'relative', zIndex: 10, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* عنوان القسم */}
+                    <h2 style={{
+                      fontSize: '40px', fontWeight: '900',
+                      marginBottom: '20px', textAlign: 'center', paddingBottom: '12px',
+                      color: currentTheme.primary,
+                      borderBottom: `4px solid ${currentTheme.secondary}`,
+                      fontFamily: 'Cairo, sans-serif',
+                    }}>
                       {category}
                     </h2>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px' }}>
+
+                    {/* المنتجات */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap',
+                      justifyContent: 'center', gap: '16px',
+                      flex: 1, alignContent: 'flex-start',
+                    }}>
                       {pageProducts.map(product => (
                         <ProductCard
                           key={product.id}
@@ -738,9 +749,9 @@ function App() {
             })}
 
             {products.length === 0 && (
-              <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                  <p className="text-2xl text-gray-500">لا توجد منتجات لعرضها</p>
+              <div style={{ width: '1122px', height: '794px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: '24px', color: '#6b7280', fontFamily: 'Cairo, sans-serif' }}>لا توجد منتجات لعرضها</p>
                   <Button onClick={() => setViewMode('admin')} className="mt-4">إضافة منتجات</Button>
                 </div>
               </div>
