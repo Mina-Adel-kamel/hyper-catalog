@@ -54,10 +54,6 @@ export function MagazineCover({
         >
           {title}
         </h1>
-        <div 
-          className="w-32 h-1 mx-auto mb-6"
-          style={{ backgroundColor: '#facc15' }}
-        ></div>
         <h2 
           className="text-4xl font-semibold drop-shadow-lg"
           style={{ fontFamily: 'Cairo, sans-serif' }}
