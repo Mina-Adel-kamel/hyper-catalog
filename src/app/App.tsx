@@ -599,7 +599,7 @@ function App() {
                 display: 'flex',
                 alignItems: 'flex-start',
                 justifyContent: 'center',
-                paddingTop: '120px',
+                paddingTop: '40px',
               }}
               dir="rtl"
             >
