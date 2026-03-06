@@ -730,23 +730,24 @@ function App() {
                     {/* المنتجات */}
                     <div style={{
                       display: 'flex', flexWrap: 'wrap',
-                      justifyContent: 'center', gap: '16px',
+                      justifyContent: 'center', gap: '20px',
                       flex: 1, alignContent: 'flex-start',
                       direction: 'rtl',
                     }}>
                       {pageProducts.map(product => (
                         <div key={product.id} style={{ 
-                          width: '160px',
-                          borderRadius: '12px',
+                          width: '200px',
+                          borderRadius: '16px',
                           overflow: 'hidden',
                           backgroundColor: '#fff',
-                          boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
+                          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
                           border: '1px solid #e5e7eb',
                           direction: 'rtl',
                           fontFamily: 'Cairo, sans-serif',
+                          flexShrink: 0,
                         }}>
                           {/* صورة المنتج */}
-                          <div style={{ position: 'relative', width: '100%', height: '140px', overflow: 'hidden' }}>
+                          <div style={{ position: 'relative', width: '100%', height: '180px', overflow: 'hidden' }}>
                             <img
                               src={product.image}
                               alt={product.name}
@@ -755,10 +756,10 @@ function App() {
                             />
                             {product.oldPrice && (
                               <div style={{
-                                position: 'absolute', top: '8px', right: '8px',
+                                position: 'absolute', top: '10px', right: '10px',
                                 backgroundColor: '#ef4444', color: '#fff',
-                                fontSize: '11px', fontWeight: '700',
-                                padding: '2px 8px', borderRadius: '20px',
+                                fontSize: '12px', fontWeight: '700',
+                                padding: '3px 10px', borderRadius: '20px',
                                 fontFamily: 'Cairo, sans-serif',
                               }}>
                                 خصم
@@ -767,42 +768,56 @@ function App() {
                           </div>
 
                           {/* تفاصيل المنتج */}
-                          <div style={{ padding: '10px 10px 12px', backgroundColor: '#fff' }}>
+                          <div style={{ padding: '12px 12px 14px', backgroundColor: '#fff' }}>
                             <p style={{
-                              fontSize: '13px', fontWeight: '700', color: '#1f2937',
-                              marginBottom: '2px', fontFamily: 'Cairo, sans-serif',
-                              textAlign: 'right', lineHeight: '1.3',
+                              fontSize: '14px', fontWeight: '700', color: '#1f2937',
+                              marginBottom: '4px', fontFamily: 'Cairo, sans-serif',
+                              textAlign: 'right', lineHeight: '1.4',
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             }}>
                               {product.name}
                             </p>
                             {product.description && (
                               <p style={{
-                                fontSize: '11px', color: '#6b7280',
-                                marginBottom: '8px', fontFamily: 'Cairo, sans-serif',
-                                textAlign: 'right', lineHeight: '1.3',
+                                fontSize: '12px', color: '#6b7280',
+                                marginBottom: '10px', fontFamily: 'Cairo, sans-serif',
+                                textAlign: 'right', lineHeight: '1.4',
                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {product.description}
                               </p>
                             )}
 
+                            {/* خط فاصل */}
+                            <div style={{ borderTop: '1px solid #f3f4f6', marginBottom: '10px' }} />
+
                             {/* السعر */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                              {product.oldPrice && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', direction: 'rtl' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                {product.oldPrice && (
+                                  <span style={{
+                                    fontSize: '11px', color: '#9ca3af',
+                                    textDecoration: 'line-through', fontFamily: 'Cairo, sans-serif',
+                                    lineHeight: '1.2',
+                                  }}>
+                                    {product.oldPrice} جنيه
+                                  </span>
+                                )}
                                 <span style={{
-                                  fontSize: '11px', color: '#9ca3af',
-                                  textDecoration: 'line-through', fontFamily: 'Cairo, sans-serif',
+                                  fontSize: '18px', fontWeight: '900', color: '#ef4444',
+                                  fontFamily: 'Cairo, sans-serif', lineHeight: '1.2',
                                 }}>
-                                  {product.oldPrice} جنيه
+                                  {product.price} جنيه
                                 </span>
-                              )}
-                              <span style={{
-                                fontSize: '16px', fontWeight: '900', color: '#ef4444',
-                                fontFamily: 'Cairo, sans-serif',
+                              </div>
+                              {/* أيقونة السعر */}
+                              <div style={{
+                                width: '36px', height: '36px', borderRadius: '50%',
+                                backgroundColor: '#fef2f2',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}>
-                                {product.price} جنيه
-                              </span>
+                                <span style={{ fontSize: '16px' }}>🏷️</span>
+                              </div>
                             </div>
                           </div>
                         </div>
