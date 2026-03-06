@@ -15,6 +15,10 @@ import { Search, FileDown, Eye, Settings as SettingsIcon, Package, Grid3x3, File
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Toaster, toast } from 'sonner';
+import { db } from './firebase';
+import {
+  collection, doc, getDocs, setDoc, deleteDoc, writeBatch
+} from 'firebase/firestore';
 
 const CATEGORIES = [
   'الزيوت',
@@ -108,75 +112,134 @@ function App() {
   const [magazineConfig, setMagazineConfig] = useState<MagazineConfig>(DEFAULT_CONFIG);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [loading, setLoading] = useState(true);
   const magazineRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Combine default categories with custom categories
   const allCategories = [...CATEGORIES, ...customCategories];
 
-  // Load products from localStorage on mount
+  // ===== تحميل البيانات من Firestore =====
   useEffect(() => {
-    const saved = localStorage.getItem('hyperBrandProducts');
-    if (saved) {
-      setProducts(JSON.parse(saved));
-    } else {
-      setProducts(SAMPLE_PRODUCTS);
-    }
+    const loadData = async () => {
+      try {
+        setLoading(true);
 
-    const savedConfig = localStorage.getItem('hyperBrandConfig');
-    if (savedConfig) {
-      setMagazineConfig(JSON.parse(savedConfig));
-    }
+        // تحميل المنتجات
+        const productsSnap = await getDocs(collection(db, 'products'));
+        if (!productsSnap.empty) {
+          const loadedProducts = productsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Product));
+          loadedProducts.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+          setProducts(loadedProducts);
+        } else {
+          // لو مفيش منتجات، حط الـ sample وخزنهم
+          setProducts(SAMPLE_PRODUCTS);
+          await saveProductsToFirestore(SAMPLE_PRODUCTS);
+        }
 
-    const savedCustomCategories = localStorage.getItem('hyperBrandCustomCategories');
-    if (savedCustomCategories) {
-      setCustomCategories(JSON.parse(savedCustomCategories));
-    }
+        // تحميل الإعدادات
+        const configSnap = await getDocs(collection(db, 'config'));
+        if (!configSnap.empty) {
+          const configDoc = configSnap.docs.find(d => d.id === 'magazineConfig');
+          if (configDoc) setMagazineConfig(configDoc.data() as MagazineConfig);
+        }
+
+        // تحميل الأقسام المخصصة
+        const catsSnap = await getDocs(collection(db, 'customCategories'));
+        if (!catsSnap.empty) {
+          const catsDoc = catsSnap.docs.find(d => d.id === 'list');
+          if (catsDoc) setCustomCategories(catsDoc.data().categories ?? []);
+        }
+
+      } catch (err) {
+        console.error('Firestore load error:', err);
+        toast.error('❌ خطأ في تحميل البيانات');
+        // fallback للـ localStorage
+        const saved = localStorage.getItem('hyperBrandProducts');
+        if (saved) setProducts(JSON.parse(saved));
+        else setProducts(SAMPLE_PRODUCTS);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
-  // Save products to localStorage whenever they change
-  useEffect(() => {
-    if (products.length >= 0) {
-      localStorage.setItem('hyperBrandProducts', JSON.stringify(products));
-    }
-  }, [products]);
-
-  // Save config to localStorage
-  useEffect(() => {
-    localStorage.setItem('hyperBrandConfig', JSON.stringify(magazineConfig));
-  }, [magazineConfig]);
-
-  // Save custom categories to localStorage
-  useEffect(() => {
-    localStorage.setItem('hyperBrandCustomCategories', JSON.stringify(customCategories));
-  }, [customCategories]);
-
-  const handleAddOrUpdateProduct = (productData: Omit<Product, 'id'> & { id?: string }) => {
-    if (productData.id) {
-      setProducts(products.map(p => p.id === productData.id ? { ...productData, id: productData.id, order: p.order } : p));
-      setEditingProduct(null);
-      toast.success('تم تحديث المنتج بنجاح!');
-    } else {
-      const newProduct: Product = {
-        ...productData,
-        id: Date.now().toString(),
-        order: products.length,
-      };
-      setProducts([...products, newProduct]);
-      toast.success('تم إضافة المنتج بنجاح!');
+  // ===== حفظ المنتجات في Firestore =====
+  const saveProductsToFirestore = async (prods: Product[]) => {
+    try {
+      const batch = writeBatch(db);
+      prods.forEach((product, index) => {
+        const ref = doc(db, 'products', product.id);
+        batch.set(ref, { ...product, order: index });
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error('Save products error:', err);
+      throw err;
     }
   };
 
-  const handleDeleteProduct = (id: string) => {
+  // ===== حفظ الإعدادات في Firestore =====
+  const saveConfigToFirestore = async (config: MagazineConfig) => {
+    try {
+      await setDoc(doc(db, 'config', 'magazineConfig'), config);
+    } catch (err) {
+      console.error('Save config error:', err);
+    }
+  };
+
+  // ===== حفظ الأقسام في Firestore =====
+  const saveCategoriesToFirestore = async (cats: string[]) => {
+    try {
+      await setDoc(doc(db, 'customCategories', 'list'), { categories: cats });
+    } catch (err) {
+      console.error('Save categories error:', err);
+    }
+  };
+
+  const handleAddOrUpdateProduct = async (productData: Omit<Product, 'id'> & { id?: string }) => {
+    try {
+      if (productData.id) {
+        // تحديث منتج موجود
+        const updatedProducts = products.map(p =>
+          p.id === productData.id ? { ...productData, id: productData.id, order: p.order } : p
+        );
+        setProducts(updatedProducts);
+        await setDoc(doc(db, 'products', productData.id), { ...productData });
+        setEditingProduct(null);
+        toast.success('تم تحديث المنتج بنجاح!');
+      } else {
+        // إضافة منتج جديد
+        const newProduct: Product = {
+          ...productData,
+          id: Date.now().toString(),
+          order: products.length,
+        };
+        const updatedProducts = [...products, newProduct];
+        setProducts(updatedProducts);
+        await setDoc(doc(db, 'products', newProduct.id), newProduct);
+        toast.success('تم إضافة المنتج بنجاح!');
+      }
+    } catch (err) {
+      console.error('Save product error:', err);
+      toast.error('❌ خطأ في حفظ المنتج');
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
     if (confirm('هل أنت متأكد من حذف هذا المنتج؟')) {
-      setProducts(products.filter(p => p.id !== id));
-      toast.success('تم حذف المنتج بنجاح!');
+      try {
+        setProducts(products.filter(p => p.id !== id));
+        await deleteDoc(doc(db, 'products', id));
+        toast.success('تم حذف المنتج بنجاح!');
+      } catch (err) {
+        console.error('Delete product error:', err);
+        toast.error('❌ خطأ في حذف المنتج');
+      }
     }
   };
 
@@ -185,55 +248,71 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      setProducts((items) => {
-        const oldIndex = items.findIndex((i) => i.id === active.id);
-        const newIndex = items.findIndex((i) => i.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
-      toast.success('تم تغيير ترتيب المنتجات');
+      const oldIndex = products.findIndex(i => i.id === active.id);
+      const newIndex = products.findIndex(i => i.id === over.id);
+      const reordered = arrayMove(products, oldIndex, newIndex);
+      setProducts(reordered);
+      try {
+        await saveProductsToFirestore(reordered);
+        toast.success('تم تغيير ترتيب المنتجات');
+      } catch {
+        toast.error('❌ خطأ في حفظ الترتيب');
+      }
     }
   };
 
-  const handleImportExcel = (importedProducts: Omit<Product, 'id'>[]) => {
-    const newProducts: Product[] = importedProducts.map((p, index) => ({
-      ...p,
-      id: `${Date.now()}_${index}`,
-      order: products.length + index,
-    }));
-    setProducts([...products, ...newProducts]);
+  const handleImportExcel = async (importedProducts: Omit<Product, 'id'>[]) => {
+    try {
+      const newProducts: Product[] = importedProducts.map((p, index) => ({
+        ...p,
+        id: `${Date.now()}_${index}`,
+        order: products.length + index,
+      }));
+      const updatedProducts = [...products, ...newProducts];
+      setProducts(updatedProducts);
+      await saveProductsToFirestore(updatedProducts);
+      toast.success(`تم استيراد ${newProducts.length} منتج بنجاح!`);
+    } catch {
+      toast.error('❌ خطأ في حفظ المنتجات المستوردة');
+    }
   };
 
-  const handleAddCategory = () => {
+  const handleConfigChange = async (newConfig: MagazineConfig) => {
+    setMagazineConfig(newConfig);
+    await saveConfigToFirestore(newConfig);
+  };
+
+  const handleAddCategory = async () => {
     const trimmedName = newCategoryName.trim();
-    if (!trimmedName) {
-      toast.error('❌ الرجاء إدخال اسم القسم');
-      return;
+    if (!trimmedName) { toast.error('❌ الرجاء إدخال اسم القسم'); return; }
+    if (allCategories.includes(trimmedName)) { toast.error('❌ هذا القسم موجود بالفعل'); return; }
+    try {
+      const newCats = [...customCategories, trimmedName];
+      setCustomCategories(newCats);
+      setNewCategoryName('');
+      await saveCategoriesToFirestore(newCats);
+      toast.success(`✅ تم إضافة قسم "${trimmedName}" بنجاح!`);
+    } catch {
+      toast.error('❌ خطأ في حفظ القسم');
     }
-    if (allCategories.includes(trimmedName)) {
-      toast.error('❌ هذا القسم موجود بالفعل');
-      return;
-    }
-    setCustomCategories([...customCategories, trimmedName]);
-    setNewCategoryName('');
-    toast.success(`✅ تم إضافة قسم "${trimmedName}" بنجاح!`);
   };
 
-  const handleDeleteCategory = (categoryName: string) => {
-    if (CATEGORIES.includes(categoryName)) {
-      toast.error('❌ لا يمكن حذف الأقسام الافتراضية');
-      return;
-    }
+  const handleDeleteCategory = async (categoryName: string) => {
+    if (CATEGORIES.includes(categoryName)) { toast.error('❌ لا يمكن حذف الأقسام الافتراضية'); return; }
     const hasProducts = products.some(p => p.category === categoryName);
-    if (hasProducts) {
-      toast.error('❌ لا يمكن حذف قسم يحتوي على منتجات');
-      return;
-    }
+    if (hasProducts) { toast.error('❌ لا يمكن حذف قسم يحتوي على منتجات'); return; }
     if (confirm(`هل أنت متأكد من حذف قسم "${categoryName}"؟`)) {
-      setCustomCategories(customCategories.filter(c => c !== categoryName));
-      toast.success(`✅ تم حذف القسم "${categoryName}" بنجاح!`);
+      try {
+        const newCats = customCategories.filter(c => c !== categoryName);
+        setCustomCategories(newCats);
+        await saveCategoriesToFirestore(newCats);
+        toast.success(`✅ تم حذف القسم "${categoryName}" بنجاح!`);
+      } catch {
+        toast.error('❌ خطأ في حذف القسم');
+      }
     }
   };
 
@@ -413,6 +492,26 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
+
+      {/* شاشة التحميل */}
+      {loading && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          backgroundColor: '#1e40af',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '16px',
+        }}>
+          <div style={{ fontSize: '48px', fontWeight: '900', color: '#fff', fontFamily: 'Cairo, sans-serif' }}>
+            هايبر براند
+          </div>
+          <div style={{ width: '48px', height: '48px', border: '4px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <p style={{ color: 'rgba(255,255,255,0.8)', fontFamily: 'Cairo, sans-serif', fontSize: '16px' }}>
+            جاري تحميل البيانات...
+          </p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
       {viewMode === 'admin' ? (
         <div className="container mx-auto px-4 py-8 max-w-7xl">
           <div className="mb-8 text-center">
@@ -498,7 +597,7 @@ function App() {
             <p className="text-xl text-gray-600">قم بتخصيص مظهر ومعلومات مجلة عروضك</p>
           </div>
 
-          <MagazineSettings config={magazineConfig} onConfigChange={setMagazineConfig} />
+          <MagazineSettings config={magazineConfig} onConfigChange={handleConfigChange} />
 
           <div className="mt-8 rounded-xl shadow-lg overflow-hidden" style={{ background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)', border: '2px solid #3b82f6' }}>
             <div className="px-4 py-3 flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
