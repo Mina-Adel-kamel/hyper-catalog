@@ -15,7 +15,7 @@ import { Search, FileDown, Eye, Settings as SettingsIcon, Package, Grid3x3, File
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Toaster, toast } from 'sonner';
-import { db } from './firebase';
+import { db } from '../firebase';
 import {
   collection, doc, getDocs, setDoc, deleteDoc, writeBatch
 } from 'firebase/firestore';
@@ -209,7 +209,11 @@ function App() {
           p.id === productData.id ? { ...productData, id: productData.id, order: p.order } : p
         );
         setProducts(updatedProducts);
-        await setDoc(doc(db, 'products', productData.id), { ...productData });
+        const ref = doc(db, 'products', productData.id);
+        const dataToSave = { ...productData };
+        console.log('Updating product:', productData.id, dataToSave);
+        await setDoc(ref, dataToSave);
+        console.log('Product updated successfully!');
         setEditingProduct(null);
         toast.success('تم تحديث المنتج بنجاح!');
       } else {
@@ -221,12 +225,17 @@ function App() {
         };
         const updatedProducts = [...products, newProduct];
         setProducts(updatedProducts);
-        await setDoc(doc(db, 'products', newProduct.id), newProduct);
+        const ref = doc(db, 'products', newProduct.id);
+        console.log('Saving new product:', newProduct.id, newProduct);
+        await setDoc(ref, newProduct);
+        console.log('Product saved successfully to Firestore!');
         toast.success('تم إضافة المنتج بنجاح!');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Save product error:', err);
-      toast.error('❌ خطأ في حفظ المنتج');
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+      toast.error(`❌ خطأ في حفظ المنتج: ${err.message}`);
     }
   };
 
