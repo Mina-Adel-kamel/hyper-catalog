@@ -732,15 +732,80 @@ function App() {
                       display: 'flex', flexWrap: 'wrap',
                       justifyContent: 'center', gap: '16px',
                       flex: 1, alignContent: 'flex-start',
+                      direction: 'rtl',
                     }}>
                       {pageProducts.map(product => (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          onDelete={() => {}}
-                          onEdit={() => {}}
-                          isAdminMode={false}
-                        />
+                        <div key={product.id} style={{ 
+                          width: '160px',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          backgroundColor: '#fff',
+                          boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
+                          border: '1px solid #e5e7eb',
+                          direction: 'rtl',
+                          fontFamily: 'Cairo, sans-serif',
+                        }}>
+                          {/* صورة المنتج */}
+                          <div style={{ position: 'relative', width: '100%', height: '140px', overflow: 'hidden' }}>
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              crossOrigin="anonymous"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                            {product.oldPrice && (
+                              <div style={{
+                                position: 'absolute', top: '8px', right: '8px',
+                                backgroundColor: '#ef4444', color: '#fff',
+                                fontSize: '11px', fontWeight: '700',
+                                padding: '2px 8px', borderRadius: '20px',
+                                fontFamily: 'Cairo, sans-serif',
+                              }}>
+                                خصم
+                              </div>
+                            )}
+                          </div>
+
+                          {/* تفاصيل المنتج */}
+                          <div style={{ padding: '10px 10px 12px', backgroundColor: '#fff' }}>
+                            <p style={{
+                              fontSize: '13px', fontWeight: '700', color: '#1f2937',
+                              marginBottom: '2px', fontFamily: 'Cairo, sans-serif',
+                              textAlign: 'right', lineHeight: '1.3',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {product.name}
+                            </p>
+                            {product.description && (
+                              <p style={{
+                                fontSize: '11px', color: '#6b7280',
+                                marginBottom: '8px', fontFamily: 'Cairo, sans-serif',
+                                textAlign: 'right', lineHeight: '1.3',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              }}>
+                                {product.description}
+                              </p>
+                            )}
+
+                            {/* السعر */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                              {product.oldPrice && (
+                                <span style={{
+                                  fontSize: '11px', color: '#9ca3af',
+                                  textDecoration: 'line-through', fontFamily: 'Cairo, sans-serif',
+                                }}>
+                                  {product.oldPrice} جنيه
+                                </span>
+                              )}
+                              <span style={{
+                                fontSize: '16px', fontWeight: '900', color: '#ef4444',
+                                fontFamily: 'Cairo, sans-serif',
+                              }}>
+                                {product.price} جنيه
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
