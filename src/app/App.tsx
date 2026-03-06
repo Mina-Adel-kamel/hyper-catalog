@@ -304,7 +304,7 @@ function App() {
       toast.success('تم تحميل الصور');
 
       // ========== الخطوة 3: إنشاء PDF ==========
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF('l', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
