@@ -72,6 +72,33 @@ const DEFAULT_CONFIG: MagazineConfig = {
 
 const PRODUCTS_PER_PAGE = 6;
 
+// ========== دالة مساعدة لتحميل الصور كـ base64 ==========
+const loadImageAsBase64 = (src: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        try {
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        } catch {
+          resolve(src); // fallback
+        }
+      } else {
+        resolve(src);
+      }
+    };
+    img.onerror = () => resolve(src);
+    // إضافة timestamp لتجنب cache مشاكل CORS
+    img.src = src.includes('?') ? `${src}&_t=${Date.now()}` : `${src}?_t=${Date.now()}`;
+  });
+};
+
 function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,12 +159,10 @@ function App() {
 
   const handleAddOrUpdateProduct = (productData: Omit<Product, 'id'> & { id?: string }) => {
     if (productData.id) {
-      // Update existing product
       setProducts(products.map(p => p.id === productData.id ? { ...productData, id: productData.id, order: p.order } : p));
       setEditingProduct(null);
       toast.success('تم تحديث المنتج بنجاح!');
     } else {
-      // Add new product
       const newProduct: Product = {
         ...productData,
         id: Date.now().toString(),
@@ -162,7 +187,6 @@ function App() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
     if (over && active.id !== over.id) {
       setProducts((items) => {
         const oldIndex = items.findIndex((i) => i.id === active.id);
@@ -184,36 +208,29 @@ function App() {
 
   const handleAddCategory = () => {
     const trimmedName = newCategoryName.trim();
-    
     if (!trimmedName) {
       toast.error('❌ الرجاء إدخال اسم القسم');
       return;
     }
-
     if (allCategories.includes(trimmedName)) {
       toast.error('❌ هذا القسم موجود بالفعل');
       return;
     }
-
     setCustomCategories([...customCategories, trimmedName]);
     setNewCategoryName('');
     toast.success(`✅ تم إضافة قسم "${trimmedName}" بنجاح!`);
   };
 
   const handleDeleteCategory = (categoryName: string) => {
-    // Check if category is a custom category (not default)
     if (CATEGORIES.includes(categoryName)) {
       toast.error('❌ لا يمكن حذف الأقسام الافتراضية');
       return;
     }
-
-    // Check if category has products
     const hasProducts = products.some(p => p.category === categoryName);
     if (hasProducts) {
       toast.error('❌ لا يمكن حذف قسم يحتوي على منتجات');
       return;
     }
-
     if (confirm(`هل أنت متأكد من حذف قسم "${categoryName}"؟`)) {
       setCustomCategories(customCategories.filter(c => c !== categoryName));
       toast.success(`✅ تم حذف القسم "${categoryName}" بنجاح!`);
@@ -232,216 +249,186 @@ function App() {
     return acc;
   }, {} as Record<string, Product[]>);
 
-  // Calculate total pages
   const totalPages = allCategories.reduce((total, category) => {
     const categoryProducts = productsByCategory[category] || [];
     if (categoryProducts.length === 0) return total;
     return total + Math.ceil(categoryProducts.length / PRODUCTS_PER_PAGE);
-  }, 1); // +1 for cover page
+  }, 1);
 
   const currentTheme = THEMES[magazineConfig.theme];
 
+  // ========== دالة التصدير المُصلحة ==========
   const exportToPDF = async () => {
     if (!magazineRef.current) return;
 
-    const button = document.querySelector('[data-pdf-button]') as HTMLElement;
+    const pdfButton = document.querySelector('[data-pdf-button]') as HTMLElement;
     const stickyHeader = document.querySelector('.sticky') as HTMLElement;
-    
-    if (button) {
-      button.textContent = 'جاري التحضير للتصدير...';
-    }
+
+    if (pdfButton) pdfButton.textContent = 'جاري التحضير...';
     if (stickyHeader) stickyHeader.style.display = 'none';
 
     try {
-      // ========== الخطوة 1: التأكد من تحميل الخطوط العربية ==========
-      toast.info('جاري تحميل الخطوط العربية...');
+      toast.info('جاري تحميل الخطوط والصور...');
+
+      // ========== الخطوة 1: تحميل خط Cairo بشكل صريح ==========
+      // إضافة خط Cairo عبر FontFace API
+      const fontUrl = 'https://fonts.gstatic.com/s/cairo/v28/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hAA-W1ToLQ-HmkA.woff2';
+      try {
+        const cairoFont = new FontFace('Cairo', `url(${fontUrl})`, {
+          weight: '400 900',
+          style: 'normal',
+        });
+        const loadedFont = await cairoFont.load();
+        document.fonts.add(loadedFont);
+      } catch (fontErr) {
+        console.warn('Could not load Cairo font via FontFace API, using fallback', fontErr);
+      }
+
       await document.fonts.ready;
-      
-      // تحميل خط Cairo بشكل صريح
-      await document.fonts.load('16px Cairo');
-      await document.fonts.load('bold 16px Cairo');
-      await document.fonts.load('900 16px Cairo');
-      
-      // انتظار إضافي للتأكد من تحميل جميع الخطوط
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      toast.success('تم تحميل الخطوط بنجاح');
+      // ========== الخطوة 2: تحميل جميع الصور مسبقاً وتحويلها لـ base64 ==========
+      toast.info('جاري تحميل الصور...');
+      const allImages = magazineRef.current.querySelectorAll('img');
+      const imageCache = new Map<string, string>();
 
-      // ========== الخطوة 2: إنشاء PDF ==========
+      await Promise.all(
+        Array.from(allImages).map(async (img) => {
+          if (img.src && !imageCache.has(img.src)) {
+            const base64 = await loadImageAsBase64(img.src);
+            imageCache.set(img.src, base64);
+          }
+        })
+      );
+
+      toast.success('تم تحميل الصور');
+
+      // ========== الخطوة 3: إنشاء PDF ==========
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
       const sections = magazineRef.current.querySelectorAll('[data-pdf-section]');
-      
       toast.info(`جاري معالجة ${sections.length} صفحة...`);
 
       for (let i = 0; i < sections.length; i++) {
         const section = sections[i] as HTMLElement;
-        
-        if (button) {
-          button.textContent = `جاري التصدير... صفحة ${i + 1} من ${sections.length}`;
-        }
-        
-        // ========== الخطوة 3: معالجة القسم الحالي ==========
-        // انتظار تحميل جميع الصور في القسم
-        const images = section.querySelectorAll('img');
-        await Promise.all(
-          Array.from(images).map(
-            img =>
-              new Promise((resolve) => {
-                if (img.complete) {
-                  resolve(null);
-                } else {
-                  img.onload = () => resolve(null);
-                  img.onerror = () => resolve(null);
-                }
-              })
-          )
-        );
 
-        // انتظار تحميل الخطوط مرة أخرى قبل كل صفحة
+        if (pdfButton) {
+          pdfButton.textContent = `جاري التصدير... ${i + 1} / ${sections.length}`;
+        }
+
+        // انتظار تحميل الخطوط قبل كل صفحة
         await document.fonts.ready;
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // ========== الخطوة 4: تحويل القسم إلى صورة بجودة عالية ==========
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // ========== الخطوة 4: تحويل القسم لصورة ==========
         const canvas = await html2canvas(section, {
-          scale: 3, // دقة عالية جداً
+          scale: 2,
           useCORS: true,
-          allowTaint: true,
+          allowTaint: false,
           logging: false,
           backgroundColor: '#ffffff',
-          foreignObjectRendering: false, // مهم للنصوص العربية
-          letterRendering: true, // تحسين عرض الحروف
+          foreignObjectRendering: false,
           imageTimeout: 30000,
-          removeContainer: false,
-          windowWidth: 1240, // عرض A4
-          windowHeight: 1754, // ارتفاع A4
-          scrollY: -window.scrollY,
-          scrollX: -window.scrollX,
-          // ========== معالجة خاصة للنصوص العربية ==========
-          onclone: (clonedDoc) => {
-            const clonedSection = clonedDoc.querySelector('[data-pdf-section]') as HTMLElement;
-            if (clonedSection) {
-              // تطبيق خط Cairo على جميع العناصر بقوة
-              const allElements = clonedSection.querySelectorAll('*');
-              allElements.forEach((el: Element) => {
-                const htmlEl = el as HTMLElement;
-                
-                // ========== إعدادات الخط العربي ==========
-                htmlEl.style.fontFamily = 'Cairo, -apple-system, BlinkMacSystemFont, sans-serif';
+          removeContainer: true,
+          // ========== onclone: إصلاح النصوص العربية والصور ==========
+          onclone: async (clonedDoc, clonedElement) => {
+            // ========== 1. تضمين خط Cairo مباشرة في الـ clone ==========
+            const styleEl = clonedDoc.createElement('style');
+            styleEl.textContent = `
+              @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+              * {
+                font-family: 'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif !important;
+                direction: rtl !important;
+                -webkit-font-smoothing: antialiased !important;
+                text-rendering: optimizeLegibility !important;
+              }
+            `;
+            clonedDoc.head.appendChild(styleEl);
+
+            // انتظار تحميل الخطوط في الـ clone
+            await clonedDoc.fonts.ready;
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            // ========== 2. استبدال جميع الصور بـ base64 ==========
+            const clonedImages = clonedElement.querySelectorAll('img');
+            clonedImages.forEach((img: HTMLImageElement) => {
+              const originalSrc = img.src;
+              // البحث في الـ cache
+              const cachedSrc = imageCache.get(originalSrc);
+              if (cachedSrc && cachedSrc !== originalSrc) {
+                img.src = cachedSrc;
+              }
+              img.removeAttribute('loading');
+              img.removeAttribute('srcset');
+              img.style.display = 'block';
+              img.style.objectFit = 'cover';
+            });
+
+            // ========== 3. تطبيق الإعدادات على جميع العناصر النصية ==========
+            const allTextElements = clonedElement.querySelectorAll('*');
+            allTextElements.forEach((el: Element) => {
+              const htmlEl = el as HTMLElement;
+              const tag = htmlEl.tagName.toLowerCase();
+
+              // تطبيق الخط على العناصر النصية فقط
+              if (!['img', 'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon'].includes(tag)) {
+                htmlEl.style.fontFamily = "'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif";
                 htmlEl.style.direction = 'rtl';
                 htmlEl.style.unicodeBidi = 'embed';
-                
-                // ========== إزالة أي transform قد يسبب مشاكل ==========
-                htmlEl.style.transform = 'none';
-                htmlEl.style.webkitTransform = 'none';
-                
-                // ========== تحسين عرض النصوص ==========
-                htmlEl.style.textRendering = 'optimizeLegibility';
-                htmlEl.style.webkitFontSmoothing = 'antialiased';
-                htmlEl.style.mozOsxFontSmoothing = 'grayscale';
-                htmlEl.style.fontFeatureSettings = 'normal';
-                htmlEl.style.fontKerning = 'normal';
-                htmlEl.style.fontVariantLigatures = 'normal';
-                
-                // ========== منع تكسير النصوص ==========
-                htmlEl.style.whiteSpace = 'normal';
-                htmlEl.style.wordBreak = 'normal';
-                htmlEl.style.wordWrap = 'normal';
-                htmlEl.style.overflowWrap = 'normal';
-                htmlEl.style.hyphens = 'none';
-                
-                // ========== الحفاظ على المحاذاة الصحيحة ==========
-                const computedStyle = window.getComputedStyle(el);
-                if (computedStyle.textAlign === 'right' || computedStyle.textAlign === 'center') {
-                  htmlEl.style.textAlign = computedStyle.textAlign;
-                }
-              });
-              
-              // ========== معالجة الصور بشكل خاص ==========
-              const images = clonedSection.querySelectorAll('img');
-              images.forEach((img: HTMLImageElement) => {
-                img.style.display = 'block';
-                img.setAttribute('crossorigin', 'anonymous');
-                // إزالة أي lazy loading
-                img.removeAttribute('loading');
-                // التأكد من تحميل الصورة
-                if (!img.complete) {
-                  img.src = img.src; // إعادة تحميل
-                }
-              });
+              }
+            });
 
-              // ========== معالجة الخلفيات المتدرجة ==========
-              const gradientElements = clonedSection.querySelectorAll('[style*="gradient"]');
-              gradientElements.forEach((el: Element) => {
-                const htmlEl = el as HTMLElement;
-                // التأكد من عدم فقدان الـ gradient
-                const style = window.getComputedStyle(el);
-                if (style.backgroundImage && style.backgroundImage.includes('gradient')) {
-                  htmlEl.style.backgroundImage = style.backgroundImage;
-                }
-              });
-
-              // ========== إصلاح العناوين الكبيرة ==========
-              const headings = clonedSection.querySelectorAll('h1, h2, h3, h4, h5, h6');
-              headings.forEach((heading: Element) => {
-                const htmlHeading = heading as HTMLElement;
-                htmlHeading.style.fontFamily = 'Cairo, sans-serif';
-                htmlHeading.style.fontWeight = '900';
-                htmlHeading.style.direction = 'rtl';
-                htmlHeading.style.whiteSpace = 'normal';
-                htmlHeading.style.wordBreak = 'keep-all';
-                htmlHeading.style.overflowWrap = 'normal';
-              });
-            }
+            // ========== 4. إصلاح العناوين الكبيرة بشكل خاص ==========
+            const headings = clonedElement.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="font-black"], [class*="font-bold"]');
+            headings.forEach((heading: Element) => {
+              const h = heading as HTMLElement;
+              h.style.fontFamily = "'Cairo', 'Arial Unicode MS', 'Tahoma', sans-serif";
+              h.style.fontWeight = '900';
+              h.style.letterSpacing = 'normal';
+              h.style.wordSpacing = 'normal';
+            });
           },
         });
 
-        // ========== الخطوة 5: تحويل Canvas إلى صورة عالية الجودة ==========
-        const imgData = canvas.toDataURL('image/jpeg', 0.95); // جودة 95%
+        // ========== الخطوة 5: إضافة الصفحة للـ PDF ==========
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
         const imgWidth = pageWidth;
         const imgHeight = (canvas.height * pageWidth) / canvas.width;
 
-        // ========== الخطوة 6: إضافة الصفحة إلى PDF ==========
-        if (i > 0) {
-          pdf.addPage();
-        }
+        if (i > 0) pdf.addPage();
 
-        // توسيط الصورة إذا كانت أقصر من الصفحة
         if (imgHeight > pageHeight) {
-          // إذا كانت الصورة أطول من الصفحة، نقوم بتصغيرها لتناسب
           const scaledWidth = (pageHeight * canvas.width) / canvas.height;
-          const xOffset = scaledWidth > pageWidth ? 0 : (pageWidth - scaledWidth) / 2;
+          const xOffset = Math.max(0, (pageWidth - scaledWidth) / 2);
           pdf.addImage(imgData, 'JPEG', xOffset, 0, Math.min(scaledWidth, pageWidth), pageHeight);
         } else {
-          // إذا كانت الصورة أقصر، نضعها في المنتصف
           const yOffset = (pageHeight - imgHeight) / 2;
           pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight);
         }
-        
-        // انتظار صغير بين الصفحات
-        await new Promise(resolve => setTimeout(resolve, 300));
+
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
-      // ========== الخطوة 7: حفظ الملف ==========
+      // ========== الخطوة 6: حفظ الملف ==========
       const fileName = `${magazineConfig.title}-${magazineConfig.month || 'مجلة'}.pdf`;
       pdf.save(fileName);
-      
-      if (button) {
-        button.textContent = '✓ تم التحميل بنجاح!';
+
+      toast.success('✅ تم تحميل ملف PDF بنجاح!');
+
+      if (pdfButton) {
+        pdfButton.textContent = '✓ تم التحميل!';
         setTimeout(() => {
-          button.innerHTML = '<svg class="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>تحميل PDF';
+          pdfButton.innerHTML = '<svg class="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>تحميل PDF';
         }, 3000);
       }
-      
-      toast.success('✅ تم تحميل ملف PDF بنجاح!');
+
     } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast.error('❌ حدث خطأ أثناء إنشاء ملف PDF');
-      
-      if (button) {
-        button.innerHTML = '<svg class="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>تحميل PDF';
+      console.error('PDF Error:', error);
+      toast.error('❌ حدث خطأ أثناء إنشاء PDF');
+      if (pdfButton) {
+        pdfButton.innerHTML = '<svg class="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>تحميل PDF';
       }
     } finally {
       if (stickyHeader) stickyHeader.style.display = '';
@@ -451,67 +438,34 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
       {viewMode === 'admin' ? (
-        // Admin Panel
         <div className="container mx-auto px-4 py-8 max-w-7xl">
           <div className="mb-8 text-center">
             <h1 className="text-5xl font-black text-blue-900 mb-2">هايبر براند</h1>
             <p className="text-xl text-gray-600">نظام إدارة مجلة عروض السوبر ماركت</p>
           </div>
 
-          {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <StatsCard
-              title="عدد المنتجات"
-              value={products.length}
-              icon={Package}
-              color="#3b82f6"
-            />
-            <StatsCard
-              title="عدد الأقسام"
-              value={allCategories.filter(cat => productsByCategory[cat]?.length > 0).length}
-              icon={Grid3x3}
-              color="#10b981"
-            />
-            <StatsCard
-              title="عدد الصفحات"
-              value={totalPages}
-              icon={FileText}
-              color="#f59e0b"
-            />
+            <StatsCard title="عدد المنتجات" value={products.length} icon={Package} color="#3b82f6" />
+            <StatsCard title="عدد الأقسام" value={allCategories.filter(cat => productsByCategory[cat]?.length > 0).length} icon={Grid3x3} color="#10b981" />
+            <StatsCard title="عدد الصفحات" value={totalPages} icon={FileText} color="#f59e0b" />
           </div>
 
-          {/* Action Buttons */}
           <div className="flex gap-2 mb-6 justify-center print:hidden flex-wrap">
-            <Button
-              onClick={() => setViewMode('settings')}
-              variant="default"
-              style={{
-                backgroundColor: '#f59e0b',
-              }}
-            >
+            <Button onClick={() => setViewMode('settings')} variant="default" style={{ backgroundColor: '#f59e0b' }}>
               <SettingsIcon className="size-4 ml-2" />
               إعدادات المجلة
             </Button>
             <ExcelImport onImport={handleImportExcel} />
-            <Button
-              onClick={() => setViewMode('preview')}
-              variant="default"
-              className="bg-green-600 hover:bg-green-700"
-            >
+            <Button onClick={() => setViewMode('preview')} variant="default" className="bg-green-600 hover:bg-green-700">
               <Eye className="size-4 ml-2" />
               معاينة المجلة
             </Button>
-            <Button
-              onClick={exportToPDF}
-              variant="default"
-              className="bg-blue-600 hover:bg-blue-700"
-            >
+            <Button onClick={exportToPDF} variant="default" className="bg-blue-600 hover:bg-blue-700">
               <FileDown className="size-4 ml-2" />
               تحميل PDF
             </Button>
           </div>
 
-          {/* Product Form */}
           <div className="mb-8">
             <ProductForm
               onSubmit={handleAddOrUpdateProduct}
@@ -521,7 +475,6 @@ function App() {
             />
           </div>
 
-          {/* Search */}
           <div className="mb-6">
             <div className="relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 size-5" />
@@ -535,7 +488,6 @@ function App() {
             </div>
           </div>
 
-          {/* Category Tabs */}
           <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="mb-8">
             <TabsList className="flex-wrap h-auto gap-2 justify-start" dir="rtl">
               <TabsTrigger value="الكل">الكل ({products.length})</TabsTrigger>
@@ -547,25 +499,12 @@ function App() {
             </TabsList>
           </Tabs>
 
-          {/* Products Grid with Drag & Drop */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={filteredProducts.map(p => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={filteredProducts.map(p => p.id)} strategy={verticalListSortingStrategy}>
               <div className="flex flex-wrap justify-center gap-2 max-w-7xl mx-auto">
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map(product => (
-                    <SortableProduct
-                      key={product.id}
-                      product={product}
-                      onDelete={handleDeleteProduct}
-                      onEdit={handleEditProduct}
-                    />
+                    <SortableProduct key={product.id} product={product} onDelete={handleDeleteProduct} onEdit={handleEditProduct} />
                   ))
                 ) : (
                   <div className="w-full text-center py-12 text-gray-500">
@@ -577,42 +516,20 @@ function App() {
           </DndContext>
         </div>
       ) : viewMode === 'settings' ? (
-        // Settings Page
         <div className="container mx-auto px-4 py-8 max-w-5xl">
           <div className="mb-8 text-center">
             <h1 className="text-5xl font-black mb-2" style={{ color: '#f59e0b' }}>إعدادات المجلة</h1>
             <p className="text-xl text-gray-600">قم بتخصيص مظهر ومعلومات مجلة عروضك</p>
           </div>
 
-          <MagazineSettings
-            config={magazineConfig}
-            onConfigChange={setMagazineConfig}
-          />
+          <MagazineSettings config={magazineConfig} onConfigChange={setMagazineConfig} />
 
-          {/* Add New Category Section */}
-          <div 
-            className="mt-8 rounded-xl shadow-lg overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)',
-              border: '2px solid #3b82f6',
-            }}
-          >
-            <div 
-              className="px-4 py-3 flex items-center gap-2"
-              style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              }}
-            >
-              <div 
-                className="p-1.5 rounded-lg"
-                style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
-              >
+          <div className="mt-8 rounded-xl shadow-lg overflow-hidden" style={{ background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)', border: '2px solid #3b82f6' }}>
+            <div className="px-4 py-3 flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
+              <div className="p-1.5 rounded-lg" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
                 <Grid3x3 className="size-5 text-white" />
               </div>
-              <h2 
-                className="text-xl font-bold text-white"
-                style={{ fontFamily: 'Cairo, sans-serif' }}
-              >
+              <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Cairo, sans-serif' }}>
                 إدارة الأقسام المخصصة
               </h2>
             </div>
@@ -624,86 +541,32 @@ function App() {
                   placeholder="اسم القسم الجديد (مثال: العصائر، الحلويات...)"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleAddCategory();
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
                   className="flex-1"
-                  style={{
-                    borderColor: '#60a5fa',
-                    fontFamily: 'Cairo, sans-serif',
-                  }}
+                  style={{ borderColor: '#60a5fa', fontFamily: 'Cairo, sans-serif' }}
                 />
-                <Button
-                  onClick={handleAddCategory}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                >
-                  <svg 
-                    className="size-4 ml-2" 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    width="24" 
-                    height="24" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round"
-                  >
+                <Button onClick={handleAddCategory} className="bg-blue-600 hover:bg-blue-700" style={{ fontFamily: 'Cairo, sans-serif' }}>
+                  <svg className="size-4 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M5 12h14"/><path d="M12 5v14"/>
                   </svg>
                   إضافة القسم
                 </Button>
               </div>
 
-              {/* Display Custom Categories */}
               {customCategories.length > 0 ? (
                 <div>
-                  <h3 
-                    className="text-sm font-semibold mb-2"
-                    style={{ color: '#1e40af', fontFamily: 'Cairo, sans-serif' }}
-                  >
-                    ��لأقسام المخصصة ({customCategories.length}):
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#1e40af', fontFamily: 'Cairo, sans-serif' }}>
+                    الأقسام المخصصة ({customCategories.length}):
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {customCategories.map((category) => (
-                      <div
-                        key={category}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm"
-                        style={{
-                          backgroundColor: '#eff6ff',
-                          border: '1px solid #93c5fd',
-                          fontFamily: 'Cairo, sans-serif',
-                        }}
-                      >
-                        <span className="text-sm font-medium" style={{ color: '#1e40af' }}>
-                          {category}
-                        </span>
-                        <span 
-                          className="text-xs px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: '#dbeafe', color: '#1e3a8a' }}
-                        >
+                      <div key={category} className="flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm" style={{ backgroundColor: '#eff6ff', border: '1px solid #93c5fd', fontFamily: 'Cairo, sans-serif' }}>
+                        <span className="text-sm font-medium" style={{ color: '#1e40af' }}>{category}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dbeafe', color: '#1e3a8a' }}>
                           {productsByCategory[category]?.length || 0}
                         </span>
-                        <button
-                          onClick={() => handleDeleteCategory(category)}
-                          className="text-red-500 hover:text-red-700 transition-colors"
-                          title="حذف القسم"
-                        >
-                          <svg 
-                            className="size-4" 
-                            xmlns="http://www.w3.org/2000/svg" 
-                            width="24" 
-                            height="24" 
-                            viewBox="0 0 24 24" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            strokeWidth="2" 
-                            strokeLinecap="round" 
-                            strokeLinejoin="round"
-                          >
+                        <button onClick={() => handleDeleteCategory(category)} className="text-red-500 hover:text-red-700 transition-colors" title="حذف القسم">
+                          <svg className="size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
                           </svg>
                         </button>
@@ -712,17 +575,8 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <div 
-                  className="text-center py-6 rounded-lg"
-                  style={{
-                    backgroundColor: '#f0f9ff',
-                    border: '2px dashed #93c5fd',
-                  }}
-                >
-                  <p 
-                    className="text-sm"
-                    style={{ color: '#1e40af', fontFamily: 'Cairo, sans-serif' }}
-                  >
+                <div className="text-center py-6 rounded-lg" style={{ backgroundColor: '#f0f9ff', border: '2px dashed #93c5fd' }}>
+                  <p className="text-sm" style={{ color: '#1e40af', fontFamily: 'Cairo, sans-serif' }}>
                     لا توجد أقسام مخصصة حتى الآن. قم بإضافة قسم جديد أعلاه!
                   </p>
                 </div>
@@ -731,70 +585,29 @@ function App() {
           </div>
 
           <div className="flex gap-3 justify-center mt-8">
-            <Button
-              onClick={() => {
-                setViewMode('admin');
-                toast.success('تم حفظ الإعدادات بنجاح!');
-              }}
-              variant="default"
-              size="lg"
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <svg 
-                className="size-5 ml-2" 
-                xmlns="http://www.w3.org/2000/svg" 
-                width="24" 
-                height="24" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-              >
+            <Button onClick={() => { setViewMode('admin'); toast.success('تم حفظ الإعدادات بنجاح!'); }} variant="default" size="lg" className="bg-green-600 hover:bg-green-700">
+              <svg className="size-5 ml-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
               حفظ والعودة
             </Button>
-            <Button
-              onClick={() => setViewMode('preview')}
-              variant="default"
-              size="lg"
-              className="bg-blue-600 hover:bg-blue-700"
-            >
+            <Button onClick={() => setViewMode('preview')} variant="default" size="lg" className="bg-blue-600 hover:bg-blue-700">
               <Eye className="size-5 ml-2" />
               معاينة المجلة
             </Button>
           </div>
         </div>
       ) : (
-        // Magazine Preview
         <div style={{ backgroundColor: '#ffffff' }}>
-          <div 
-            className="print:hidden sticky top-0 z-50 p-4 shadow-lg"
-            style={{
-              backgroundColor: currentTheme.primary,
-              color: '#ffffff',
-            }}
-          >
+          <div className="print:hidden sticky top-0 z-50 p-4 shadow-lg" style={{ backgroundColor: currentTheme.primary, color: '#ffffff' }}>
             <div className="container mx-auto flex items-center justify-between">
               <h2 className="text-2xl font-bold">معاينة المجلة</h2>
               <div className="flex gap-2">
-                <Button
-                  onClick={() => setViewMode('admin')}
-                  variant="secondary"
-                >
+                <Button onClick={() => setViewMode('admin')} variant="secondary">
                   <SettingsIcon className="size-4 ml-2" />
-                  العودة للحة التحكم
+                  العودة للوحة التحكم
                 </Button>
-                <Button
-                  onClick={exportToPDF}
-                  variant="default"
-                  style={{
-                    backgroundColor: '#16a34a',
-                  }}
-                  data-pdf-button
-                >
+                <Button onClick={exportToPDF} variant="default" style={{ backgroundColor: '#16a34a' }} data-pdf-button>
                   <FileDown className="size-4 ml-2" />
                   تحميل PDF
                 </Button>
@@ -803,7 +616,6 @@ function App() {
           </div>
 
           <div ref={magazineRef}>
-            {/* Magazine Cover */}
             <div data-pdf-section>
               <MagazineCover
                 backgroundImage={magazineConfig.coverImage}
@@ -816,39 +628,29 @@ function App() {
               />
             </div>
 
-            {/* Products by Category - Magazine Style with Pages */}
             {allCategories.map(category => {
               const categoryProducts = productsByCategory[category];
               if (!categoryProducts || categoryProducts.length === 0) return null;
 
-              // Split products into pages
               const pages: Product[][] = [];
               for (let i = 0; i < categoryProducts.length; i += PRODUCTS_PER_PAGE) {
                 pages.push(categoryProducts.slice(i, i + PRODUCTS_PER_PAGE));
               }
 
               return pages.map((pageProducts, pageIndex) => (
-                <div 
+                <div
                   key={`${category}-page-${pageIndex}`}
-                  data-pdf-section 
+                  data-pdf-section
                   className="relative min-h-screen p-12 print:break-after-page"
-                  style={{ 
-                    backgroundColor: '#ffffff',
-                  }}
+                  style={{ backgroundColor: '#ffffff' }}
                 >
-                  {/* Logo at Top */}
                   {magazineConfig.logo && (
                     <div className="absolute top-4 right-8 z-10">
-                      <img
-                        src={magazineConfig.logo}
-                        alt="Logo"
-                        className="max-h-16 max-w-[200px] object-contain"
-                      />
+                      <img src={magazineConfig.logo} alt="Logo" className="max-h-16 max-w-[200px] object-contain" crossOrigin="anonymous" />
                     </div>
                   )}
 
-                  {/* Background Image */}
-                  <div 
+                  <div
                     className="absolute inset-0 opacity-5"
                     style={{
                       backgroundImage: 'url(https://images.unsplash.com/photo-1560428943-715536fc4689?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080)',
@@ -857,10 +659,9 @@ function App() {
                       backgroundRepeat: 'no-repeat',
                     }}
                   />
-                  
-                  {/* Content */}
+
                   <div className="relative z-10">
-                    <h2 
+                    <h2
                       className="text-5xl font-black mb-8 text-center pb-4"
                       style={{
                         color: currentTheme.primary,
@@ -890,12 +691,7 @@ function App() {
               <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center">
                   <p className="text-2xl text-gray-500">لا توجد منتجات لعرضها</p>
-                  <Button
-                    onClick={() => setViewMode('admin')}
-                    className="mt-4"
-                  >
-                    إضافة منتجات
-                  </Button>
+                  <Button onClick={() => setViewMode('admin')} className="mt-4">إضافة منتجات</Button>
                 </div>
               </div>
             )}
