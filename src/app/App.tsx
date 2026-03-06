@@ -641,29 +641,79 @@ function App() {
                 <div
                   key={`${category}-page-${pageIndex}`}
                   data-pdf-section
-                  className="relative min-h-screen p-12 print:break-after-page"
-                  style={{ backgroundColor: '#ffffff' }}
+                  style={{
+                    position: 'relative',
+                    width: '297mm',
+                    minHeight: '210mm',
+                    backgroundColor: '#ffffff',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box',
+                    margin: '0 auto',
+                    padding: '40px 50px',
+                    pageBreakAfter: 'always',
+                  }}
                 >
-                  {magazineConfig.logo && (
-                    <div className="absolute top-4 right-8 z-10">
-                      <img src={magazineConfig.logo} alt="Logo" className="max-h-16 max-w-[200px] object-contain" crossOrigin="anonymous" />
-                    </div>
-                  )}
-
+                  {/* خلفية تملأ الصفحة بالكامل */}
                   <div
-                    className="absolute inset-0 opacity-5"
                     style={{
-                      backgroundImage: 'url(https://images.unsplash.com/photo-1560428943-715536fc4689?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080)',
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundImage: 'url(https://images.unsplash.com/photo-1560428943-715536fc4689?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920)',
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
                       backgroundRepeat: 'no-repeat',
+                      opacity: 0.07,
+                      width: '100%',
+                      height: '100%',
                     }}
                   />
 
-                  <div className="relative z-10">
+                  {/* شريط لوني علوي */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: '8px',
+                      background: `linear-gradient(90deg, ${currentTheme.primary}, ${currentTheme.secondary})`,
+                    }}
+                  />
+
+                  {/* شريط لوني سفلي */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: '8px',
+                      background: `linear-gradient(90deg, ${currentTheme.secondary}, ${currentTheme.primary})`,
+                    }}
+                  />
+
+                  {magazineConfig.logo && (
+                    <div style={{ position: 'absolute', top: '16px', right: '32px', zIndex: 10 }}>
+                      <img src={magazineConfig.logo} alt="Logo" style={{ maxHeight: '56px', maxWidth: '160px', objectFit: 'contain' }} crossOrigin="anonymous" />
+                    </div>
+                  )}
+
+                  {/* اسم المتجر أسفل يسار */}
+                  <div style={{ position: 'absolute', bottom: '20px', left: '32px', zIndex: 10 }}>
+                    <span style={{ fontSize: '11px', color: currentTheme.primary, fontFamily: 'Cairo, sans-serif', fontWeight: '600', opacity: 0.7 }}>
+                      {magazineConfig.storeName} • {magazineConfig.month}
+                    </span>
+                  </div>
+
+                  {/* المحتوى */}
+                  <div style={{ position: 'relative', zIndex: 10 }}>
                     <h2
-                      className="text-5xl font-black mb-8 text-center pb-4"
                       style={{
+                        fontSize: '42px',
+                        fontWeight: '900',
+                        marginBottom: '24px',
+                        textAlign: 'center',
+                        paddingBottom: '12px',
                         color: currentTheme.primary,
                         borderBottom: `4px solid ${currentTheme.secondary}`,
                         fontFamily: 'Cairo, sans-serif',
@@ -671,7 +721,7 @@ function App() {
                     >
                       {category}
                     </h2>
-                    <div className="flex flex-wrap justify-center gap-6">
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px' }}>
                       {pageProducts.map(product => (
                         <ProductCard
                           key={product.id}
