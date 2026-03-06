@@ -15,10 +15,21 @@ import { Search, FileDown, Eye, Settings as SettingsIcon, Package, Grid3x3, File
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Toaster, toast } from 'sonner';
-import { db } from '../../lib/firebase';
-import {
-  collection, doc, getDocs, setDoc, deleteDoc, writeBatch
-} from 'firebase/firestore';
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+
+// ===== Firebase Config مباشرة =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDxUrCK6Vs-GTVB7wa0ZfsbdRS-Su05MTA",
+  authDomain: "hyper-catalog.firebaseapp.com",
+  projectId: "hyper-catalog",
+  storageBucket: "hyper-catalog.firebasestorage.app",
+  messagingSenderId: "311778308274",
+  appId: "1:311778308274:web:78480d5b6c2e8093e059ab",
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getFirestore(app);
 
 const CATEGORIES = [
   'الزيوت',
