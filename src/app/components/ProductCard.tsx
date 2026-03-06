@@ -36,6 +36,7 @@ export function ProductCard({ product, onDelete, onEdit, isAdminMode = true, isD
         width: '280px',
       }}
     >
+      {/* صورة المنتج */}
       <div 
         className="relative"
         style={{ 
@@ -105,12 +106,21 @@ export function ProductCard({ product, onDelete, onEdit, isAdminMode = true, isD
           </div>
         )}
       </div>
-      <div className="p-4">
+
+      {/* تفاصيل المنتج — خلفية بيضاء صريحة */}
+      <div 
+        style={{ 
+          padding: '16px',
+          backgroundColor: '#ffffff',
+          borderTop: '1px solid #f3f4f6',
+        }}
+      >
         <h3 
           className="font-bold text-lg mb-2"
           style={{ 
             color: '#1f2937',
             fontFamily: 'Cairo, sans-serif',
+            backgroundColor: '#ffffff',
           }}
         >
           {product.name}
@@ -121,17 +131,22 @@ export function ProductCard({ product, onDelete, onEdit, isAdminMode = true, isD
             color: '#6b7280',
             fontFamily: 'Cairo, sans-serif',
             minHeight: '40px',
+            backgroundColor: '#ffffff',
           }}
         >
           {product.description}
         </p>
-        <div className="flex items-center justify-center gap-2">
+        <div 
+          className="flex items-center justify-center gap-2"
+          style={{ backgroundColor: '#ffffff' }}
+        >
           {hasDiscount && (
             <div 
               className="text-lg line-through"
               style={{ 
                 color: '#9ca3af',
                 fontFamily: 'Cairo, sans-serif',
+                backgroundColor: '#ffffff',
               }}
             >
               {product.oldPrice} جنيه
@@ -142,6 +157,7 @@ export function ProductCard({ product, onDelete, onEdit, isAdminMode = true, isD
             style={{ 
               color: '#ef4444',
               fontFamily: 'Cairo, sans-serif',
+              backgroundColor: '#ffffff',
             }}
           >
             {product.price} جنيه
