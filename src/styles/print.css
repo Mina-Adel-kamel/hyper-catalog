@@ -1,0 +1,46 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-family: 'Cairo', sans-serif !important;
+  }
+  
+  * {
+    font-family: 'Cairo', sans-serif !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print\:break-after-page {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print\:break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+
+  .print\:h-screen {
+    height: 100vh;
+  }
+
+  /* Hide admin controls */
+  button[data-pdf-button],
+  .sticky {
+    display: none !important;
+  }
+}
