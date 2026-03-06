@@ -335,7 +335,9 @@ function App() {
             const style = clonedDoc.createElement('style');
             style.textContent = `
               @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
-              * { font-family: 'Cairo', 'Tahoma', sans-serif !important; direction: rtl !important; }
+              *:not(img):not(svg):not(path):not(circle):not(rect):not(line):not(polyline):not(polygon) {
+                font-family: 'Cairo', 'Tahoma', sans-serif !important;
+              }
             `;
             clonedDoc.head.appendChild(style);
             await clonedDoc.fonts.ready;
@@ -347,7 +349,7 @@ function App() {
               if (cached) img.src = cached;
               img.removeAttribute('loading');
               img.removeAttribute('srcset');
-              img.style.display = 'block';
+              img.style.cssText = img.style.cssText; // keep existing styles
             });
           },
         });
@@ -735,92 +737,13 @@ function App() {
                       direction: 'rtl',
                     }}>
                       {pageProducts.map(product => (
-                        <div key={product.id} style={{ 
-                          width: '200px',
-                          borderRadius: '16px',
-                          overflow: 'hidden',
-                          backgroundColor: '#fff',
-                          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                          border: '1px solid #e5e7eb',
-                          direction: 'rtl',
-                          fontFamily: 'Cairo, sans-serif',
-                          flexShrink: 0,
-                        }}>
-                          {/* صورة المنتج */}
-                          <div style={{ position: 'relative', width: '100%', height: '180px', overflow: 'hidden' }}>
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              crossOrigin="anonymous"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                            />
-                            {product.oldPrice && (
-                              <div style={{
-                                position: 'absolute', top: '10px', right: '10px',
-                                backgroundColor: '#ef4444', color: '#fff',
-                                fontSize: '12px', fontWeight: '700',
-                                padding: '3px 10px', borderRadius: '20px',
-                                fontFamily: 'Cairo, sans-serif',
-                              }}>
-                                خصم
-                              </div>
-                            )}
-                          </div>
-
-                          {/* تفاصيل المنتج */}
-                          <div style={{ padding: '12px 12px 14px', backgroundColor: '#fff' }}>
-                            <p style={{
-                              fontSize: '14px', fontWeight: '700', color: '#1f2937',
-                              marginBottom: '4px', fontFamily: 'Cairo, sans-serif',
-                              textAlign: 'right', lineHeight: '1.4',
-                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            }}>
-                              {product.name}
-                            </p>
-                            {product.description && (
-                              <p style={{
-                                fontSize: '12px', color: '#6b7280',
-                                marginBottom: '10px', fontFamily: 'Cairo, sans-serif',
-                                textAlign: 'right', lineHeight: '1.4',
-                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                              }}>
-                                {product.description}
-                              </p>
-                            )}
-
-                            {/* خط فاصل */}
-                            <div style={{ borderTop: '1px solid #f3f4f6', marginBottom: '10px' }} />
-
-                            {/* السعر */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', direction: 'rtl' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                {product.oldPrice && (
-                                  <span style={{
-                                    fontSize: '11px', color: '#9ca3af',
-                                    textDecoration: 'line-through', fontFamily: 'Cairo, sans-serif',
-                                    lineHeight: '1.2',
-                                  }}>
-                                    {product.oldPrice} جنيه
-                                  </span>
-                                )}
-                                <span style={{
-                                  fontSize: '18px', fontWeight: '900', color: '#ef4444',
-                                  fontFamily: 'Cairo, sans-serif', lineHeight: '1.2',
-                                }}>
-                                  {product.price} جنيه
-                                </span>
-                              </div>
-                              {/* أيقونة السعر */}
-                              <div style={{
-                                width: '36px', height: '36px', borderRadius: '50%',
-                                backgroundColor: '#fef2f2',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              }}>
-                                <span style={{ fontSize: '16px' }}>🏷️</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onDelete={() => {}}
+                          onEdit={() => {}}
+                          isAdminMode={false}
+                        />
                       ))}
                     </div>
                   </div>
