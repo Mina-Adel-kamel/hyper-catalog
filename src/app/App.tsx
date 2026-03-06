@@ -338,6 +338,14 @@ function App() {
               *:not(img):not(svg):not(path):not(circle):not(rect):not(line):not(polyline):not(polygon) {
                 font-family: 'Cairo', 'Tahoma', sans-serif !important;
               }
+              /* إجبار الخلفية البيضاء على كروت المنتجات */
+              [data-pdf-section] .rounded-lg,
+              [data-pdf-section] .rounded-lg > div:last-child,
+              [data-pdf-section] .rounded-lg p,
+              [data-pdf-section] .rounded-lg h3,
+              [data-pdf-section] .rounded-lg .flex {
+                background-color: #ffffff !important;
+              }
             `;
             clonedDoc.head.appendChild(style);
             await clonedDoc.fonts.ready;
@@ -349,7 +357,25 @@ function App() {
               if (cached) img.src = cached;
               img.removeAttribute('loading');
               img.removeAttribute('srcset');
-              img.style.cssText = img.style.cssText; // keep existing styles
+            });
+
+            // إجبار الخلفية البيضاء على كل عناصر الكارت
+            clonedEl.querySelectorAll('.rounded-lg').forEach((card: Element) => {
+              const cardEl = card as HTMLElement;
+              cardEl.style.backgroundColor = '#ffffff';
+              // كل العناصر جوا الكارت ماعدا div الصورة
+              const children = cardEl.querySelectorAll('*');
+              children.forEach((child: Element) => {
+                const tag = (child as HTMLElement).tagName.toLowerCase();
+                if (!['img', 'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon'].includes(tag)) {
+                  const el = child as HTMLElement;
+                  const computed = window.getComputedStyle(el);
+                  // فقط لو مش div الصورة (اللي عنده height 200px)
+                  if (computed.height !== '200px') {
+                    el.style.backgroundColor = '#ffffff';
+                  }
+                }
+              });
             });
           },
         });
