@@ -15,7 +15,7 @@ import { Search, FileDown, Eye, Settings as SettingsIcon, Package, Grid3x3, File
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Toaster, toast } from 'sonner';
-import { db } from '../firebase';
+import { db } from '../../lib/firebase';
 import {
   collection, doc, getDocs, setDoc, deleteDoc, writeBatch
 } from 'firebase/firestore';
