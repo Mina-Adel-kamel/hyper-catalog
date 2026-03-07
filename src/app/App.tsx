@@ -44,28 +44,7 @@ const CATEGORIES = [
   'العناية الشصية',
 ];
 
-const SAMPLE_PRODUCTS: Product[] = [
-  {
-    id: '1',
-    name: 'زيت عباد الشمس',
-    category: 'الزيوت',
-    description: 'زيت طبخ نقي 1 لتر',
-    price: 70,
-    oldPrice: 80,
-    image: 'https://images.unsplash.com/photo-1662058595162-10e024b1a907?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    order: 0,
-  },
-  {
-    id: '2',
-    name: 'أرز بسمتي',
-    category: 'الأرز',
-    description: 'أرز بسمتي درجة أولى 5 كجم',
-    price: 120,
-    image: 'https://images.unsplash.com/photo-1690654238838-93701cd10afc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    order: 0,
-  },
-
-];
+const SAMPLE_PRODUCTS: Product[] = []
 
 const DEFAULT_CONFIG: MagazineConfig = {
   title: 'هايبر براند',
