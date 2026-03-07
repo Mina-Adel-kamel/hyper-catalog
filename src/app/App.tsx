@@ -64,15 +64,7 @@ const SAMPLE_PRODUCTS: Product[] = [
     image: 'https://images.unsplash.com/photo-1690654238838-93701cd10afc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
     order: 0,
   },
-  {
-    id: '3',
-    name: 'مكرونة إسباجتي',
-    category: 'المكرونة',
-    description: 'مكرونة إسباجتي 500 جرام',
-    price: 15,
-    image: 'https://images.unsplash.com/photo-1613634333954-085b019d87b7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    order: 0,
-  },
+
 ];
 
 const DEFAULT_CONFIG: MagazineConfig = {
